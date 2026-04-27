@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Game - Collaboration Challenge</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        .token-stack {
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: center;
+            min-height: 40px;
+        }
+        .token {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            margin-top: -12px;
+        }
+        .token:first-child {
+            margin-top: 0;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #2563eb;
+        }
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: #d1d5db;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #3b82f6;
+            transition: width 0.3s;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 250px;
+            background-color: #1f2937;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 10px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -125px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const TURN_REQUIREMENTS = [
+            { marketing: 2, ops: 0, product: 1, tech: 1 },
+            { marketing: 2, ops: 0, product: 1, tech: 1 },
+            { marketing: 3, ops: 0, product: 2, tech: 2 },
+            { marketing: 4, ops: 0, product: 3, tech: 3 },
+            { marketing: 4, ops: 0, product: 3, tech: 3 },
+            { marketing: 5, ops: 1, product: 4, tech: 4 },
+            { marketing: 5, ops: 1, product: 4, tech: 4 },
+            { marketing: 5, ops: 1, product: 4, tech: 4 },
+            { marketing: 6, ops: 1, product: 5, tech: 5 },
+            { marketing: 6, ops: 0, product: 5, tech: 5 }
+        ];
+
+        const PROJECT_DESCRIPTIONS = {
+            extractionTool: {
+                name: "Set up an extraction tool",
+                description: "Add a data connector (API, external database, CSV files). Increases production of all data types by +1 per turn.",
+                cost: "1 data of each domain",
+                effect: "+1 production/domain/turn",
+                icon: "🔌"
+            },
+            dataQuality: {
+                name: "Implement Data Quality rules",
+                description: "Set up data quality tests, automatic validation and cleaning. Improves reliability and increases production.",
+                cost: "1 data of each domain",
+                effect: "+1 production/domain/turn",
+                icon: "✨"
+            },
+            pipelineAuto: {
+                name: "Deploy an automated pipeline",
+                description: "Deploy an automated data pipeline with orchestration (Airflow, dbt). Processes more data and reduces manual errors.",
+                cost: "2 data of each domain",
+                effect: "+2 production/domain/turn",
+                icon: "⚡"
+            },
+            fileStorage: {
+                name: "Organise file storage",
+                description: "Organise your raw data in a structured file system (folders, naming conventions). First step towards efficient storage.",
+                cost: "1 data of each domain",
+                effect: "+1 capacity/domain",
+                icon: "📁"
+            },
+            database: {
+                name: "Create a database",
+                description: "Create a relational database (PostgreSQL, MySQL). Enables faster queries and better organisation. Requires file storage.",
+                cost: "1 data of each domain",
+                effect: "+1 capacity/domain",
+                icon: "💾"
+            },
+            dataWarehouse: {
+                name: "Deploy a Data Warehouse",
+                description: "Deploy a modern data warehouse (Snowflake, BigQuery). Architecture optimised for large-scale analytics. Requires the database.",
+                cost: "1 data of each domain",
+                effect: "+1 capacity/domain",
+                icon: "🏢"
+            },
+            catalog: {
+                name: "Set up a Data Catalog",
+                description: "Implement a data catalogue to easily document and discover available datasets. Makes analysts' work easier.",
+                cost: "1 data of each domain",
+                effect: "+1 capacity/domain",
+                icon: "📖"
+            },
+            biTool: {
+                name: "Deploy a BI tool",
+                description: "Deploy a Business Intelligence tool (Tableau, PowerBI, Looker). Enables rapid creation of dashboards and visualisations.",
+                cost: "1 data of each domain",
+                effect: "+1 capacity/domain",
+                icon: "📊"
+            },
+            realtimeDashboard: {
+                name: "Create real-time dashboards",
+                description: "Create real-time dashboards to visualise data instantly. Reduces analysis time and speeds up decision-making.",
+                cost: "1 data of each domain",
+                effect: "-1 data on next analysis",
+                icon: "⚡"
+            },
+            mlModel: {
+                name: "Deploy an ML model",
+                description: "Deploy a Machine Learning model to automate predictive analyses. Pay for the cheapest, get the 2nd one free!",
+                cost: "3 data of each domain",
+                effect: "Pay 1 analysis, get 2!",
+                icon: "🤖"
+            },
+            advancedStorage: {
+                name: "Advanced storage optimisation",
+                description: "Implement advanced compression and indexing techniques. Significantly improves available storage capacity.",
+                cost: "2 data of each domain",
+                effect: "+2 capacity/domain",
+                icon: "💾"
+            }
+        };
+
+        const colors = {
+            marketing: { bg: '#22c55e', light: '#dcfce7', border: '#16a34a', name: 'Marketing', emoji: '📈' },
+            ops: { bg: '#d1d5db', light: '#f3f4f6', border: '#9ca3af', name: 'Ops', emoji: '⚙️' },
+            product: { bg: '#ef4444', light: '#fee2e2', border: '#dc2626', name: 'Product', emoji: '🎯' },
+            tech: { bg: '#3b82f6', light: '#dbeafe', border: '#2563eb', name: 'Tech', emoji: '💻' }
+        };
+
+        function DataGame() {
+            const [currentTurn, setCurrentTurn] = useState(1);
+            const [storage, setStorage] = useState({ marketing: 0, ops: 0, product: 0, tech: 0 });
+            const [storageCapacity, setStorageCapacity] = useState({ marketing: 2, ops: 2, product: 2, tech: 2 });
+            const [productionRate, setProductionRate] = useState({ marketing: 2, ops: 2, product: 2, tech: 2 });
+            const [gameOver, setGameOver] = useState(false);
+            const [customerSatisfaction, setCustomerSatisfaction] = useState(100);
+            const [analyses, setAnalyses] = useState([]);
+            const [productionReceived, setProductionReceived] = useState(false);
+            const [nextAnalysisDiscount, setNextAnalysisDiscount] = useState(false);
+            const [mlModelActive, setMlModelActive] = useState(false);
+            
+            const [projects, setProjects] = useState({
+                extractionTools: 0,
+                dataQuality: 0,
+                pipelineAuto: 0,
+                fileStorage: false,
+                database: false,
+                dataWarehouse: false,
+                catalog: false,
+                biTool: false,
+                realtimeDashboard: false,
+                mlModel: false,
+                advancedStorage: 0
+            });
+
+            const getCurrentRequirement = () => TURN_REQUIREMENTS[currentTurn - 1];
+            const getPendingAnalyses = () => analyses.filter(a => !a.completed);
+            const getBacklogAnalyses = () => analyses.filter(a => !a.completed && a.turn < currentTurn);
+            const getCurrentTurnAnalysis = () => analyses.find(a => !a.completed && a.turn === currentTurn);
+            const getCompletedAnalysesCount = () => analyses.filter(a => a.completed).length;
+
+            const receiveProduction = () => {
+                const newStorage = { ...storage };
+                let overflow = false;
+
+                Object.keys(productionRate).forEach((domain) => {
+                    const produced = productionRate[domain];
+                    const current = newStorage[domain];
+                    const capacity = storageCapacity[domain];
+                    
+                    if (current + produced <= capacity) {
+                        newStorage[domain] = current + produced;
+                    } else {
+                        newStorage[domain] = capacity;
+                        overflow = true;
+                    }
+                });
+
+                setStorage(newStorage);
+                setProductionReceived(true);
+                
+                if (overflow) {
+                    alert('⚠️ Warning! Some data was lost due to insufficient storage capacity!');
+                }
+            };
+
+            useEffect(() => {
+                if (currentTurn <= 10) {
+                    const requirement = getCurrentRequirement();
+                    const newAnalysis = {
+                        id: Date.now() + currentTurn,
+                        turn: currentTurn,
+                        requirements: requirement,
+                        completed: false
+                    };
+                    setAnalyses(prev => [...prev, newAnalysis]);
+                    
+                    const backlogCount = analyses.filter(a => !a.completed && a.turn < currentTurn).length;
+                    if (backlogCount > 0) {
+                        const penalty = backlogCount * 5;
+                        const newSatisfaction = Math.max(0, customerSatisfaction - penalty);
+                        setCustomerSatisfaction(newSatisfaction);
+                    }
+                }
+            }, [currentTurn]);
+
+            const canAffordProject = (cost = 1) => {
+                return storage.marketing >= cost && storage.ops >= cost && storage.product >= cost && storage.tech >= cost;
+            };
+
+            const executeProject = (projectType) => {
+                let cost = 1;
+                if (projectType === 'pipelineAuto') cost = 2;
+                if (projectType === 'mlModel') cost = 3;
+                if (projectType === 'advancedStorage') cost = 2;
+
+                if (!canAffordProject(cost)) {
+                    alert('Not enough data for this project!');
+                    return;
+                }
+
+                const newStorage = {
+                    marketing: storage.marketing - cost,
+                    ops: storage.ops - cost,
+                    product: storage.product - cost,
+                    tech: storage.tech - cost
+                };
+                setStorage(newStorage);
+
+                const newProjects = { ...projects };
+                const newProductionRate = { ...productionRate };
+                const newStorageCapacity = { ...storageCapacity };
+
+                switch (projectType) {
+                    case 'extractionTool':
+                        newProjects.extractionTools += 1;
+                        Object.keys(newProductionRate).forEach((domain) => {
+                            newProductionRate[domain] += 1;
+                        });
+                        setProductionRate(newProductionRate);
+                        break;
+                    
+                    case 'dataQuality':
+                        newProjects.dataQuality += 1;
+                        Object.keys(newProductionRate).forEach((domain) => {
+                            newProductionRate[domain] += 1;
+                        });
+                        setProductionRate(newProductionRate);
+                        break;
+                    
+                    case 'pipelineAuto':
+                        newProjects.pipelineAuto += 1;
+                        Object.keys(newProductionRate).forEach((domain) => {
+                            newProductionRate[domain] += 2;
+                        });
+                        setProductionRate(newProductionRate);
+                        break;
+                    
+                    case 'advancedStorage':
+                        newProjects.advancedStorage += 1;
+                        Object.keys(newStorageCapacity).forEach((domain) => {
+                            newStorageCapacity[domain] += 2;
+                        });
+                        setStorageCapacity(newStorageCapacity);
+                        break;
+                    
+                    case 'fileStorage':
+                        if (!newProjects.fileStorage) {
+                            newProjects.fileStorage = true;
+                            Object.keys(newStorageCapacity).forEach((domain) => {
+                                newStorageCapacity[domain] += 1;
+                            });
+                            setStorageCapacity(newStorageCapacity);
+                        } else {
+                            alert('Project already completed!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                    
+                    case 'database':
+                        if (newProjects.fileStorage && !newProjects.database) {
+                            newProjects.database = true;
+                            Object.keys(newStorageCapacity).forEach((domain) => {
+                                newStorageCapacity[domain] += 1;
+                            });
+                            setStorageCapacity(newStorageCapacity);
+                        } else {
+                            alert('You must first have file storage!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                    
+                    case 'dataWarehouse':
+                        if (newProjects.database && !newProjects.dataWarehouse) {
+                            newProjects.dataWarehouse = true;
+                            Object.keys(newStorageCapacity).forEach((domain) => {
+                                newStorageCapacity[domain] += 1;
+                            });
+                            setStorageCapacity(newStorageCapacity);
+                        } else {
+                            alert('You must first have the database!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                    
+                    case 'catalog':
+                        if (!newProjects.catalog) {
+                            newProjects.catalog = true;
+                            Object.keys(newStorageCapacity).forEach((domain) => {
+                                newStorageCapacity[domain] += 1;
+                            });
+                            setStorageCapacity(newStorageCapacity);
+                        } else {
+                            alert('Project already completed!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                    
+                    case 'biTool':
+                        if (!newProjects.biTool) {
+                            newProjects.biTool = true;
+                            Object.keys(newStorageCapacity).forEach((domain) => {
+                                newStorageCapacity[domain] += 1;
+                            });
+                            setStorageCapacity(newStorageCapacity);
+                        } else {
+                            alert('Project already completed!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                    
+                    case 'realtimeDashboard':
+                        if (!newProjects.realtimeDashboard) {
+                            newProjects.realtimeDashboard = true;
+                            setNextAnalysisDiscount(true);
+                        } else {
+                            alert('Project already completed!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                    
+                    case 'mlModel':
+                        if (!newProjects.mlModel) {
+                            newProjects.mlModel = true;
+                            setMlModelActive(true);
+                        } else {
+                            alert('Project already completed!');
+                            setStorage(storage);
+                            return;
+                        }
+                        break;
+                }
+
+                setProjects(newProjects);
+            };
+
+            const tryCompleteAnalysis = (analysisId) => {
+                const analysis = analyses.find(a => a.id === analysisId);
+                if (!analysis || analysis.completed) return false;
+
+                const req = analysis.requirements;
+                const discount = nextAnalysisDiscount ? 1 : 0;
+                
+                const requiredMarketing = Math.max(0, req.marketing - discount);
+                const requiredOps = Math.max(0, req.ops - discount);
+                const requiredProduct = Math.max(0, req.product - discount);
+                const requiredTech = Math.max(0, req.tech - discount);
+                
+                if (storage.marketing >= requiredMarketing &&
+                    storage.ops >= requiredOps &&
+                    storage.product >= requiredProduct &&
+                    storage.tech >= requiredTech) {
+                    
+                    setStorage({
+                        marketing: storage.marketing - requiredMarketing,
+                        ops: storage.ops - requiredOps,
+                        product: storage.product - requiredProduct,
+                        tech: storage.tech - requiredTech
+                    });
+                    
+                    const newAnalyses = analyses.map(a => 
+                        a.id === analysisId ? { ...a, completed: true } : a
+                    );
+                    setAnalyses(newAnalyses);
+                    
+                    if (nextAnalysisDiscount) {
+                        setNextAnalysisDiscount(false);
+                    }
+                    
+                    const newSatisfaction = Math.min(100, customerSatisfaction + 8);
+                    setCustomerSatisfaction(newSatisfaction);
+                    
+                    return true;
+                }
+                return false;
+            };
+
+            const tryCompleteDoubleAnalysis = () => {
+                const pending = getPendingAnalyses();
+                if (pending.length < 2) {
+                    alert('You need at least 2 pending analyses to use the ML Model!');
+                    return;
+                }
+
+                const getAnalysisMaxCost = (analysis) => {
+                    const req = analysis.requirements;
+                    return Math.max(req.marketing, req.ops, req.product, req.tech);
+                };
+
+                const sortedAnalyses = [...pending].sort((a, b) => {
+                    return getAnalysisMaxCost(a) - getAnalysisMaxCost(b);
+                });
+
+                let cheapestAffordable = null;
+                let secondCheapest = null;
+
+                for (let i = 0; i < sortedAnalyses.length; i++) {
+                    const analysis = sortedAnalyses[i];
+                    const req = analysis.requirements;
+                    
+                    if (storage.marketing >= req.marketing &&
+                        storage.ops >= req.ops &&
+                        storage.product >= req.product &&
+                        storage.tech >= req.tech) {
+                        
+                        cheapestAffordable = analysis;
+                        
+                        if (i + 1 < sortedAnalyses.length) {
+                            secondCheapest = sortedAnalyses[i + 1];
+                        } else if (i > 0) {
+                            secondCheapest = sortedAnalyses[i - 1];
+                        }
+                        
+                        break;
+                    }
+                }
+
+                if (!cheapestAffordable) {
+                    alert('⚠️ Not enough resources to pay even the cheapest analysis.');
+                    return;
+                }
+
+                if (!secondCheapest) {
+                    alert('⚠️ Only one analysis available, cannot get 2.');
+                    return;
+                }
+
+                const req = cheapestAffordable.requirements;
+                setStorage({
+                    marketing: storage.marketing - req.marketing,
+                    ops: storage.ops - req.ops,
+                    product: storage.product - req.product,
+                    tech: storage.tech - req.tech
+                });
+                
+                const newAnalyses = analyses.map(a => {
+                    if (a.id === cheapestAffordable.id || a.id === secondCheapest.id) {
+                        return { ...a, completed: true };
+                    }
+                    return a;
+                });
+                setAnalyses(newAnalyses);
+                
+                const newSatisfaction = Math.min(100, customerSatisfaction + 15);
+                setCustomerSatisfaction(newSatisfaction);
+                
+                setMlModelActive(false);
+                alert(`🤖 ML Model used! "Pay 1, get 2" deal!\n\n` +
+                      `💰 Paid: Analysis Turn ${cheapestAffordable.turn}\n` +
+                      `🎁 FREE: Analysis Turn ${secondCheapest.turn}`);
+            };
+
+            const nextTurn = () => {
+                if (currentTurn >= 10) {
+                    setGameOver(true);
+                } else {
+                    setCurrentTurn(currentTurn + 1);
+                    setProductionReceived(false);
+                }
+            };
+
+            const resetGame = () => {
+                setCurrentTurn(1);
+                setStorage({ marketing: 0, ops: 0, product: 0, tech: 0 });
+                setStorageCapacity({ marketing: 2, ops: 2, product: 2, tech: 2 });
+                setProductionRate({ marketing: 2, ops: 2, product: 2, tech: 2 });
+                setGameOver(false);
+                setCustomerSatisfaction(100);
+                setAnalyses([]);
+                setProjects({
+                    extractionTools: 0,
+                    dataQuality: 0,
+                    pipelineAuto: 0,
+                    fileStorage: false,
+                    database: false,
+                    dataWarehouse: false,
+                    catalog: false,
+                    biTool: false,
+                    realtimeDashboard: false,
+                    mlModel: false,
+                    advancedStorage: 0
+                });
+                setProductionReceived(false);
+                setNextAnalysisDiscount(false);
+                setMlModelActive(false);
+            };
+
+            const renderTokenStack = (domain, count) => {
+                const domainInfo = colors[domain];
+                return (
+                    <div className="token-stack">
+                        {Array.from({ length: count }).map((_, i) => (
+                            <div
+                                key={i}
+                                className="token"
+                                style={{
+                                    backgroundColor: domainInfo.bg,
+                                    borderColor: domainInfo.border
+                                }}
+                            />
+                        ))}
+                    </div>
+                );
+            };
+
+            const renderProjectButton = (projectKey, projectInfo) => {
+                const isCompleted = typeof projects[projectKey] === 'number' ? projects[projectKey] > 0 : projects[projectKey];
+                const count = typeof projects[projectKey] === 'number' ? projects[projectKey] : 0;
+                
+                let cost = 1;
+                if (projectKey === 'pipelineAuto') cost = 2;
+                if (projectKey === 'mlModel') cost = 3;
+                if (projectKey === 'advancedStorage') cost = 2;
+                
+                let isDisabled = !canAffordProject(cost);
+                if (projectKey === 'database' && !projects.fileStorage) isDisabled = true;
+                if (projectKey === 'dataWarehouse' && !projects.database) isDisabled = true;
+                if (typeof projects[projectKey] === 'boolean' && projects[projectKey]) isDisabled = true;
+
+                return (
+                    <div className="tooltip">
+                        <button
+                            onClick={() => executeProject(projectKey)}
+                            disabled={isDisabled}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '11px', padding: '8px', width: '100%', textAlign: 'left' }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span>{projectInfo.icon}</span>
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {isCompleted && typeof projects[projectKey] === 'boolean' ? '✓ ' : ''}{projectInfo.name}
+                                    {count > 0 && ` [${count}]`}
+                                </span>
+                            </div>
+                        </button>
+                        <span className="tooltiptext">
+                            <strong>{projectInfo.name}</strong><br/>
+                            {projectInfo.description}<br/><br/>
+                            <strong>Cost:</strong> {projectInfo.cost}<br/>
+                            <strong>Effect:</strong> {projectInfo.effect}
+                        </span>
+                    </div>
+                );
+            };
+
+            const renderAnalysisCard = (analysis, isNew = false) => {
+                const req = analysis.requirements;
+                const discount = nextAnalysisDiscount ? 1 : 0;
+                
+                const requiredMarketing = Math.max(0, req.marketing - discount);
+                const requiredOps = Math.max(0, req.ops - discount);
+                const requiredProduct = Math.max(0, req.product - discount);
+                const requiredTech = Math.max(0, req.tech - discount);
+                
+                const canComplete = 
+                    storage.marketing >= requiredMarketing &&
+                    storage.ops >= requiredOps &&
+                    storage.product >= requiredProduct &&
+                    storage.tech >= requiredTech;
+
+                return (
+                    <div 
+                        key={analysis.id}
+                        style={{ 
+                            background: canComplete ? '#dcfce7' : (isNew ? '#fef3c7' : '#fee2e2'),
+                            padding: '12px',
+                            borderRadius: '6px',
+                            marginBottom: '10px',
+                            border: `3px solid ${canComplete ? '#22c55e' : (isNew ? '#f59e0b' : '#ef4444')}`
+                        }}
+                    >
+                        <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Analysis Turn {analysis.turn}</span>
+                            {isNew && <span style={{ background: '#f59e0b', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '10px' }}>NEW</span>}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', marginBottom: '8px' }}>
+                            <div>📈 {requiredMarketing} {discount > 0 && req.marketing > 0 && <span style={{textDecoration: 'line-through', color: '#9ca3af'}}>({req.marketing})</span>}</div>
+                            <div>⚙️ {requiredOps} {discount > 0 && req.ops > 0 && <span style={{textDecoration: 'line-through', color: '#9ca3af'}}>({req.ops})</span>}</div>
+                            <div>🎯 {requiredProduct} {discount > 0 && req.product > 0 && <span style={{textDecoration: 'line-through', color: '#9ca3af'}}>({req.product})</span>}</div>
+                            <div>💻 {requiredTech} {discount > 0 && req.tech > 0 && <span style={{textDecoration: 'line-through', color: '#9ca3af'}}>({req.tech})</span>}</div>
+                        </div>
+                        {nextAnalysisDiscount && (
+                            <div style={{ fontSize: '10px', color: '#f59e0b', marginBottom: '6px', fontWeight: '600' }}>
+                                ⚡ Real-time dashboard active (-1 data)
+                            </div>
+                        )}
+                        <button
+                            onClick={() => tryCompleteAnalysis(analysis.id)}
+                            disabled={!canComplete}
+                            className="btn btn-primary"
+                            style={{ width: '100%', fontSize: '11px', padding: '6px' }}
+                        >
+                            {canComplete ? 'Deliver ✓' : 'Pending...'}
+                        </button>
+                    </div>
+                );
+            };
+
+            const getSatisfactionIcon = () => {
+                if (customerSatisfaction >= 70) return '😊';
+                if (customerSatisfaction >= 40) return '😐';
+                return '😞';
+            };
+
+            const getSatisfactionColor = () => {
+                if (customerSatisfaction >= 70) return '#22c55e';
+                if (customerSatisfaction >= 40) return '#eab308';
+                return '#ef4444';
+            };
+
+            if (gameOver) {
+                const completedCount = getCompletedAnalysesCount();
+                const pendingCount = getPendingAnalyses().length;
+                return (
+                    <div style={{ minHeight: '100vh', background: '#f9fafb', padding: '40px' }}>
+                        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                            <div className="card">
+                                <h1 style={{ textAlign: 'center', fontSize: '32px', marginBottom: '30px' }}>
+                                    🎉 Game Over!
+                                </h1>
+                                <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                                    <div style={{ fontSize: '64px', fontWeight: 'bold', color: '#22c55e', marginBottom: '10px' }}>
+                                        {completedCount}
+                                    </div>
+                                    <div style={{ fontSize: '20px', marginBottom: '30px' }}>Analyses completed</div>
+                                    
+                                    <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#ef4444', marginBottom: '10px' }}>
+                                        {pendingCount}
+                                    </div>
+                                    <div style={{ fontSize: '20px', marginBottom: '30px' }}>Pending analyses</div>
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginTop: '30px' }}>
+                                        <div style={{ fontSize: '64px' }}>{getSatisfactionIcon()}</div>
+                                        <div>
+                                            <div style={{ fontSize: '14px', color: '#6b7280' }}>Customer Satisfaction</div>
+                                            <div style={{ fontSize: '48px', fontWeight: 'bold', color: getSatisfactionColor() }}>
+                                                {customerSatisfaction}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="progress-bar" style={{ marginTop: '20px' }}>
+                                        <div className="progress-fill" style={{ width: `${customerSatisfaction}%`, background: getSatisfactionColor() }}></div>
+                                    </div>
+                                </div>
+                                
+                                <div style={{ textAlign: 'center' }}>
+                                    <button onClick={resetGame} className="btn btn-primary" style={{ fontSize: '18px', padding: '15px 40px' }}>
+                                        New Game
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            const backlogAnalyses = getBacklogAnalyses();
+            const currentAnalysis = getCurrentTurnAnalysis();
+            const pendingAnalyses = getPendingAnalyses();
+
+            return (
+                <div style={{ minHeight: '100vh', background: '#f9fafb', padding: '20px' }}>
+                    <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+                            <h1 style={{ fontSize: '36px', fontWeight: 'bold', marginBottom: '10px' }}>
+                                Data Game - Collaboration Challenge
+                            </h1>
+                            <p style={{ color: '#6b7280' }}>
+                                Maximise your analyses by managing your data resources
+                            </p>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+                            <div className="card">
+                                <div style={{ fontWeight: '600', marginBottom: '10px' }}>
+                                    📊 Turn {currentTurn} / 10
+                                </div>
+                                <div className="progress-bar">
+                                    <div className="progress-fill" style={{ width: `${(currentTurn / 10) * 100}%` }}></div>
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div style={{ fontWeight: '600', marginBottom: '10px', color: '#22c55e' }}>
+                                    ✅ Successful Analyses
+                                </div>
+                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#22c55e' }}>
+                                    {getCompletedAnalysesCount()}
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div style={{ fontWeight: '600', marginBottom: '10px', color: '#ef4444' }}>
+                                    ⏳ Pending
+                                </div>
+                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#ef4444' }}>
+                                    {pendingAnalyses.length}
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <div style={{ fontWeight: '600', marginBottom: '10px' }}>
+                                    {getSatisfactionIcon()} Customer Satisfaction
+                                </div>
+                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: getSatisfactionColor() }}>
+                                    {customerSatisfaction}%
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '20px', marginBottom: '30px' }}>
+                            <div className="card">
+                                <h3 style={{ fontWeight: '600', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    📦 Data Production
+                                </h3>
+                                <div style={{ background: '#eff6ff', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '48px', marginBottom: '10px' }}>🖥️</div>
+                                    <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '15px' }}>
+                                        {productionRate.marketing} data / domain
+                                    </div>
+                                    {!productionReceived && (
+                                        <button 
+                                            onClick={receiveProduction} 
+                                            className="btn btn-primary"
+                                            style={{ width: '100%' }}
+                                        >
+                                            Receive Data
+                                        </button>
+                                    )}
+                                    {productionReceived && (
+                                        <div style={{ color: '#22c55e', fontWeight: '600' }}>
+                                            ✓ Data received
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <div style={{ marginTop: '20px', fontSize: '12px', color: '#6b7280' }}>
+                                    <div>🔌 Extraction tools: {projects.extractionTools}</div>
+                                    <div>✨ Data Quality: {projects.dataQuality}</div>
+                                    <div>⚡ Auto pipelines: {projects.pipelineAuto}</div>
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <h3 style={{ fontWeight: '600', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    🗄️ Storage Space
+                                </h3>
+                                <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', padding: '20px', background: '#f3f4f6', borderRadius: '8px', minHeight: '200px' }}>
+                                    {Object.entries(colors).map(([domainKey, domainInfo]) => {
+                                        const count = storage[domainKey];
+                                        const capacity = storageCapacity[domainKey];
+                                        return (
+                                            <div key={domainKey} style={{ textAlign: 'center' }}>
+                                                <div style={{ marginBottom: '10px', fontWeight: '600', fontSize: '12px' }}>
+                                                    {domainInfo.emoji} {domainInfo.name}
+                                                </div>
+                                                {renderTokenStack(domainKey, count)}
+                                                <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
+                                                    {count} / {capacity}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                
+                                <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px' }}>
+                                        👥 Teams: Data Engineers + Data Analysts
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                        Total capacity: {storageCapacity.marketing} data / domain
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card">
+                                <h3 style={{ fontWeight: '600', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    📋 Analysis Backlog
+                                </h3>
+
+                                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                    {currentAnalysis && (
+                                        <div style={{ marginBottom: '15px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '600', color: '#f59e0b', marginBottom: '8px', textTransform: 'uppercase' }}>
+                                                🆕 New Request - Turn {currentTurn}
+                                            </div>
+                                            {renderAnalysisCard(currentAnalysis, true)}
+                                        </div>
+                                    )}
+
+                                    {backlogAnalyses.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '11px', fontWeight: '600', color: '#ef4444', marginBottom: '8px', textTransform: 'uppercase' }}>
+                                                ⏰ Overdue Analyses ({backlogAnalyses.length})
+                                            </div>
+                                            {backlogAnalyses.map(analysis => renderAnalysisCard(analysis, false))}
+                                        </div>
+                                    )}
+
+                                    {mlModelActive && pendingAnalyses.length >= 2 && (
+                                        <div style={{ marginTop: '15px' }}>
+                                            <button
+                                                onClick={tryCompleteDoubleAnalysis}
+                                                className="btn btn-primary"
+                                                style={{ width: '100%', fontSize: '12px', padding: '10px', background: '#8b5cf6' }}
+                                            >
+                                                🤖 Use ML Model<br/>
+                                                <span style={{fontSize: '10px'}}>Pay 1, get 2!</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {pendingAnalyses.length === 0 && (
+                                        <div style={{ textAlign: 'center', color: '#22c55e', padding: '20px', fontWeight: '600' }}>
+                                            ✓ All analyses completed!
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {productionReceived && (
+                            <div className="card" style={{ marginBottom: '20px' }}>
+                                <h3 style={{ fontWeight: '600', marginBottom: '15px' }}>
+                                    🚀 Improvement Projects
+                                </h3>
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '15px', fontStyle: 'italic' }}>
+                                    💡 Hover over buttons to see details of each project
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                                    <div>
+                                        <h4 style={{ fontWeight: '600', marginBottom: '10px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            🔧 Data Engineers
+                                            <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 'normal' }}>(Infrastructure & Production)</span>
+                                        </h4>
+                                        <div style={{ display: 'grid', gap: '6px' }}>
+                                            {renderProjectButton('extractionTool', PROJECT_DESCRIPTIONS.extractionTool)}
+                                            {renderProjectButton('dataQuality', PROJECT_DESCRIPTIONS.dataQuality)}
+                                            {renderProjectButton('pipelineAuto', PROJECT_DESCRIPTIONS.pipelineAuto)}
+                                            {renderProjectButton('fileStorage', PROJECT_DESCRIPTIONS.fileStorage)}
+                                            {renderProjectButton('database', PROJECT_DESCRIPTIONS.database)}
+                                            {renderProjectButton('dataWarehouse', PROJECT_DESCRIPTIONS.dataWarehouse)}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 style={{ fontWeight: '600', marginBottom: '10px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            📈 Data Analysts
+                                            <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 'normal' }}>(Exploitation & Visualisation)</span>
+                                        </h4>
+                                        <div style={{ display: 'grid', gap: '6px' }}>
+                                            {renderProjectButton('catalog', PROJECT_DESCRIPTIONS.catalog)}
+                                            {renderProjectButton('biTool', PROJECT_DESCRIPTIONS.biTool)}
+                                            {renderProjectButton('advancedStorage', PROJECT_DESCRIPTIONS.advancedStorage)}
+                                            {renderProjectButton('realtimeDashboard', PROJECT_DESCRIPTIONS.realtimeDashboard)}
+                                            {renderProjectButton('mlModel', PROJECT_DESCRIPTIONS.mlModel)}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ textAlign: 'center' }}>
+                            <button 
+                                onClick={nextTurn}
+                                disabled={!productionReceived}
+                                className="btn btn-primary"
+                                style={{ fontSize: '18px', padding: '15px 60px' }}
+                            >
+                                Validate Turn {currentTurn} and Move to Next →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<DataGame />);
+    </script>
+</body>
+</html>
